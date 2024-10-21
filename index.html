@@ -47,7 +47,7 @@
     border-bottom: 1px solid #ddd;
   }
   th {
-    background-color: #06991c;
+    background-color: #880303;
     color: white;
   }
   tr:nth-child(even) {
@@ -132,7 +132,7 @@
     width: 48%;
   }
   #rekap-absen h2 {
-    background-color: #2c3e50;
+    background-color: #9a0606;
     color: white;
     padding: 15px;
     margin: 0 0 20px 0;
@@ -172,7 +172,7 @@
   #rekapTable .name-column {
     position: sticky;
     left: 0;
-    background-color: #2c3e50;
+    background-color: #9a0606;
     z-index: 5;
     color: white;
     text-align: left;
@@ -184,14 +184,14 @@
     background-color: #34495e;
   }
   #input-absen h2 {
-    background-color: #2c3e50;
+    background-color: #9a0606;
     color: white;
     padding: 15px;
     margin: 0 0 20px 0;
     text-align: center;
   }
   #edit-kehadiran h2 {
-    background-color: #2c3e50;
+    background-color: #9a0606;
     color: white;
     padding: 15px;
     margin: 0 0 20px 0;
@@ -443,7 +443,7 @@
                     <thead>
                         <tr>
                             <th>No.</th>
-                            <th>Nama Siswa</th>
+                            <th>NAMA SANTRI</th>
                             <th>Kehadiran</th>
                             <!-- Hapus baris ini -->
                             <!-- <th>Catatan</th> -->
@@ -522,7 +522,7 @@
                     <thead>
                         <tr>
                             <th>No.</th>
-                            <th>Nama Siswa</th>
+                            <th>NAMA SANTRI</th>
                             <th>Kehadiran</th>
                             <!-- Hapus baris ini -->
                             <!-- <th>Catatan</th> -->
@@ -650,19 +650,27 @@
             const santriList = document.getElementById('studentList');
             santriList.innerHTML = '';
 
+            const currentDate = new Date();
+            const dateString = formatDate(currentDate);
+            const isSunday = currentDate.getDay() === 0;
+            const isHolidayDate = isHoliday(currentDate);
+
             santri.forEach((siswa, index) => {
                 const row = document.createElement('tr');
                 row.innerHTML = `
                     <td>${index + 1}</td>
                     <td>${siswa.NAMA}</td>
                     <td>
-                        <select onchange="updateAbsensi('${siswa.NAMA}', this.value)">
-                            <option value="">Pilih status</option>
-                            <option value="HADIR">Hadir</option>
-                            <option value="SAKIT">Sakit</option>
-                            <option value="IZIN">Izin</option>
-                            <option value="ALPHA">Alpha</option>
-                        </select>
+                        ${isSunday || isHolidayDate ? 
+                            '<span>Hari Libur</span>' :
+                            `<select onchange="updateAbsensi('${siswa.NAMA}', this.value)">
+                                <option value="">Pilih status</option>
+                                <option value="HADIR">Hadir</option>
+                                <option value="SAKIT">Sakit</option>
+                                <option value="IZIN">Izin</option>
+                                <option value="ALPHA">Alpha</option>
+                            </select>`
+                        }
                     </td>
                 `;
                 santriList.appendChild(row);
@@ -675,7 +683,8 @@
 
             const currentDate = new Date();
             const maxDate = formatDate(currentDate);
-            document.getElementById('editDateSelector').max = maxDate;
+            const editDateSelector = document.getElementById('editDateSelector');
+            editDateSelector.max = maxDate;
 
             const editDate = selectedDate ? getWITADate(selectedDate) : currentDate;
             const dateString = formatDate(editDate);
@@ -684,6 +693,9 @@
                 alert('Tidak dapat mengedit kehadiran untuk tanggal di masa depan.');
                 return;
             }
+
+            const isSunday = editDate.getDay() === 0;
+            const isHolidayDate = isHoliday(editDate);
 
             santri.forEach((siswa, index) => {
                 const row = document.createElement('tr');
@@ -694,30 +706,41 @@
                     <td>${index + 1}</td>
                     <td>${siswa.NAMA}</td>
                     <td>
-                        <select onchange="updateAbsensi('${siswa.NAMA}', this.value, '${dateString}')">
-                            <option value="" ${status === '' ? 'selected' : ''}>Pilih status</option>
-                            <option value="HADIR" ${status === 'HADIR' ? 'selected' : ''}>Hadir</option>
-                            <option value="SAKIT" ${status === 'SAKIT' ? 'selected' : ''}>Sakit</option>
-                            <option value="IZIN" ${status === 'IZIN' ? 'selected' : ''}>Izin</option>
-                            <option value="ALPHA" ${status === 'ALPHA' ? 'selected' : ''}>Alpha</option>
-                        </select>
+                        ${isSunday || isHolidayDate ? 
+                            '<span>Hari Libur</span>' :
+                            `<select onchange="updateAbsensi('${siswa.NAMA}', this.value, '${dateString}')">
+                                <option value="" ${status === '' ? 'selected' : ''}>Pilih status</option>
+                                <option value="HADIR" ${status === 'HADIR' ? 'selected' : ''}>Hadir</option>
+                                <option value="SAKIT" ${status === 'SAKIT' ? 'selected' : ''}>Sakit</option>
+                                <option value="IZIN" ${status === 'IZIN' ? 'selected' : ''}>Izin</option>
+                                <option value="ALPHA" ${status === 'ALPHA' ? 'selected' : ''}>Alpha</option>
+                            </select>`
+                        }
                     </td>
                 `;
                 editList.appendChild(row);
             });
 
-            document.getElementById('editDateSelector').value = dateString;
+            editDateSelector.value = dateString;
         }
 
         function updateAbsensi(nama, status, date) {
             const dateString = date ? formatDate(getWITADate(date)) : formatDate(new Date());
+            const currentDate = getWITADate(dateString);
+            const isSunday = currentDate.getDay() === 0;
+            const isHolidayDate = isHoliday(currentDate);
+
+            if (isSunday || isHolidayDate) {
+                alert('Tidak dapat mengubah kehadiran pada hari libur.');
+                return;
+            }
             
             if (!absensiData[dateString]) {
                 absensiData[dateString] = {};
             }
             absensiData[dateString][nama] = status;
             
-            console.log('Updated absensiData:', absensiData); // Tambahkan log ini
+            console.log('Updated absensiData:', absensiData);
         }
 
         function getStatusSingkatan(status) {
@@ -765,7 +788,7 @@
             const rekapHeader = document.getElementById('rekapHeader');
             rekapHeader.innerHTML = `
                 <th class="name-column">No.</th>
-                <th class="name-column">Nama Siswa</th>
+                <th class="name-column">NAMA SANTRI</th>
                 ${Array.from({length: daysInMonth}, (_, i) => {
                     const date = new Date(year, selectedMonth - 1, i + 1);
                     const isSunday = date.getDay() === 0;
@@ -869,6 +892,11 @@
             const selectedSection = document.getElementById(sectionId);
             if (selectedSection) {
                 selectedSection.style.display = 'block';
+                
+                // Jika section yang dipilih adalah edit-kehadiran, tampilkan data hari ini
+                if (sectionId === 'edit-kehadiran') {
+                    tampilkanEditKehadiran(currentSantri);
+                }
             }
         }
 
