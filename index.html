@@ -578,8 +578,11 @@
 
         // Fungsi untuk memformat tanggal ke format YYYY-MM-DD dalam WITA
         function formatDate(date) {
-            const options = { timeZone: 'Asia/Makassar' };
-            return date.toLocaleString('sv-SE', options).split(' ')[0];
+            const d = new Date(date);
+            const year = d.getFullYear();
+            const month = String(d.getMonth() + 1).padStart(2, '0');
+            const day = String(d.getDate()).padStart(2, '0');
+            return `${year}-${month}-${day}`;
         }
 
         // Fungsi untuk mendapatkan tanggal dalam WITA
@@ -590,21 +593,21 @@
 
         async function loadAbsensiData(kelas) {
             const guru = getLoggedInGuru();
+            const currentDate = formatDate(new Date());
             try {
                 const { data, error } = await supabaseClient
                     .from('absensi')
                     .select('*')
                     .eq('guru', guru)
-                    .eq('kelas', kelas);
+                    .eq('kelas', kelas)
+                    .eq('tanggal', currentDate);
 
                 if (error) throw error;
 
                 absensiData = {};
+                absensiData[currentDate] = {};
                 data.forEach(item => {
-                    if (!absensiData[item.tanggal]) {
-                        absensiData[item.tanggal] = {};
-                    }
-                    absensiData[item.tanggal][item.nama] = item.status;
+                    absensiData[currentDate][item.nama] = item.status;
                 });
 
                 console.log('Loaded absensi data:', absensiData);
@@ -645,8 +648,8 @@
 
                 showAllSectionContent();
 
-                updateInputAbsen();
                 await loadAbsensiData(kelas);
+                updateInputAbsen();
                 updateRekapAbsen();
                 tampilkanEditKehadiran(currentSantri);
 
@@ -680,19 +683,23 @@
         function updateInputAbsen() {
             const studentList = document.getElementById('studentList');
             studentList.innerHTML = '';
+            const currentDate = formatDate(new Date());
+            
             currentSantri.forEach((siswa, index) => {
                 const escapedNama = escapeString(siswa.NAMA);
+                const currentStatus = absensiData[currentDate] && absensiData[currentDate][siswa.NAMA] ? absensiData[currentDate][siswa.NAMA] : '';
+                
                 const row = document.createElement('tr');
                 row.innerHTML = `
                     <td>${index + 1}</td>
                     <td>${siswa.NAMA}</td>
                     <td>
-                        <select onchange="updateAbsensi(this, '${escapedNama}')">
-                            <option value="">Pilih Status</option>
-                            <option value="HADIR">HADIR</option>
-                            <option value="SAKIT">SAKIT</option>
-                            <option value="IZIN">IZIN</option>
-                            <option value="ALPHA">ALPHA</option>
+                        <select onchange="updateAbsensi(this, '${escapedNama}', '${currentDate}')">
+                            <option value="" ${currentStatus === '' ? 'selected' : ''}>Pilih Status</option>
+                            <option value="HADIR" ${currentStatus === 'HADIR' ? 'selected' : ''}>HADIR</option>
+                            <option value="SAKIT" ${currentStatus === 'SAKIT' ? 'selected' : ''}>SAKIT</option>
+                            <option value="IZIN" ${currentStatus === 'IZIN' ? 'selected' : ''}>IZIN</option>
+                            <option value="ALPHA" ${currentStatus === 'ALPHA' ? 'selected' : ''}>ALPHA</option>
                         </select>
                     </td>
                 `;
@@ -794,21 +801,19 @@
 
         // Modifikasi fungsi tampilkanEditKehadiran
         async function tampilkanEditKehadiran(santriList, selectedDate = null) {
-            if (!selectedDate) {
-                selectedDate = getTodayDate();
-            }
-
-            // Set nilai tanggal pada input date
-            document.getElementById('editDateSelector').value = selectedDate;
-
             const editList = document.getElementById('editList');
             editList.innerHTML = '';
+
+            if (!selectedDate) {
+                selectedDate = formatDate(new Date());
+            }
+
+            document.getElementById('editDateSelector').value = selectedDate;
 
             const guru = getLoggedInGuru();
             const kelas = document.getElementById('kelasFilter').value;
 
             try {
-                // Ambil data absensi untuk tanggal yang dipilih
                 const { data: absensiData, error } = await supabaseClient
                     .from('absensi')
                     .select('nama, status')
@@ -840,20 +845,6 @@
                     editList.appendChild(row);
                 });
 
-                // Tambahkan ini untuk memastikan status tidak berubah kecuali diubah manual
-                const selects = editList.querySelectorAll('select');
-                selects.forEach(select => {
-                    const originalValue = select.value;
-                    select.addEventListener('focus', function() {
-                        this.dataset.originalValue = this.value;
-                    });
-                    select.addEventListener('change', function() {
-                        if (this.value === '') {
-                            this.value = this.dataset.originalValue || '';
-                        }
-                    });
-                });
-
             } catch (error) {
                 console.error('Error fetching attendance data:', error);
                 showCenterAlert('Terjadi kesalahan saat memuat data absensi.', 5000);
@@ -876,61 +867,80 @@
         }
 
         // Modifikasi fungsi updateAbsensi
-        function updateAbsensi(selectElement, escapedNama, selectedDate) {
+        async function updateAbsensi(selectElement, escapedNama, selectedDate) {
             const nama = escapedNama.replace(/\\'/g, "'").replace(/\\"/g, '"').replace(/\\\\/g, '\\');
             const status = selectElement.value;
             const guru = getLoggedInGuru();
             const kelas = document.getElementById('kelasFilter').value;
 
             if (status === '') {
+                showCenterAlert('Silakan pilih status kehadiran.', 3000);
                 selectElement.value = selectElement.dataset.originalValue || '';
                 return;
             }
 
-            // Simpan perubahan ke database
-            supabaseClient
-                .from('absensi')
-                .upsert({
-                    tanggal: selectedDate,
-                    nama: nama,
-                    status: status,
-                    guru: guru,
-                    kelas: kelas
-                }, { onConflict: 'tanggal,nama,kelas' })
-                .then(({ data, error }) => {
-                    if (error) {
-                        console.error('Error saat memperbarui absensi:', error);
-                        showCenterAlert('Terjadi kesalahan saat memperbarui absensi. Silakan coba lagi.', 5000);
-                        selectElement.value = selectElement.dataset.originalValue || '';
-                    } else {
-                        console.log('Data absensi diperbarui:', data);
-                        selectElement.dataset.originalValue = status;
-                    }
-                });
+            try {
+                const { data, error } = await supabaseClient
+                    .from('absensi')
+                    .upsert({
+                        tanggal: selectedDate,
+                        nama: nama,
+                        status: status,
+                        guru: guru,
+                        kelas: kelas
+                    }, { onConflict: 'tanggal,nama,kelas' });
+
+                if (error) throw error;
+
+                console.log('Data absensi diperbarui:', data);
+                selectElement.dataset.originalValue = status;
+
+                // Update local absensiData
+                if (!absensiData[selectedDate]) {
+                    absensiData[selectedDate] = {};
+                }
+                absensiData[selectedDate][nama] = status;
+
+                // If the updated date is today, also update the input absen view
+                const today = formatDate(new Date());
+                if (selectedDate === today) {
+                    updateInputAbsen();
+                }
+
+                // Update rekap absen
+                updateRekapAbsen();
+
+            } catch (error) {
+                console.error('Error saat memperbarui absensi:', error);
+                showCenterAlert('Terjadi kesalahan saat memperbarui absensi. Silakan coba lagi.', 5000);
+                selectElement.value = selectElement.dataset.originalValue || '';
+            }
         }
 
-        // Ubah fungsi submitAttendance menjadi async jika belum
+        // Modifikasi fungsi submitAttendance
         async function submitAttendance() {
             const guru = getLoggedInGuru();
             const kelas = document.getElementById('kelasFilter').value;
             const currentDate = formatDate(new Date());
 
-            const attendanceData = currentSantri.reduce((acc, siswa) => {
-                const status = absensiData[currentDate] && absensiData[currentDate][siswa.NAMA] || '';
-                if (status) {
-                    acc.push({
-                        tanggal: currentDate,
-                        nama: siswa.NAMA,
-                        status: status,
-                        guru: guru,
-                        kelas: kelas
-                    });
-                }
-                return acc;
-            }, []);
+            const attendanceData = currentSantri
+                .map(siswa => {
+                    const status = absensiData[currentDate] && absensiData[currentDate][siswa.NAMA] || '';
+                    if (status !== '') {
+                        return {
+                            tanggal: currentDate,
+                            nama: siswa.NAMA,
+                            status: status,
+                            guru: guru,
+                            kelas: kelas
+                        };
+                    }
+                    return null;
+                })
+                .filter(item => item !== null);
 
             if (attendanceData.length === 0) {
-                showCenterAlert('Tidak ada data absensi yang lengkap untuk disimpan.', 5000);
+                showCenterAlert('Tidak ada data absensi yang dipilih untuk disimpan.', 3000);
                 return;
             }
 
@@ -947,7 +957,7 @@
                 showCenterAlert('Data absensi berhasil disimpan!', 3000);
                 console.log('Data absensi tersimpan:', data);
 
-                // Perbarui absensiData
+                // Update local absensiData
                 attendanceData.forEach(item => {
                     if (!absensiData[item.tanggal]) {
                         absensiData[item.tanggal] = {};
@@ -955,9 +965,10 @@
                     absensiData[item.tanggal][item.nama] = item.status;
                 });
 
-                // Perbarui rekap dan edit kehadiran
+                // Update rekap and edit kehadiran views
                 updateRekapAbsen();
-                tampilkanEditKehadiran(currentSantri);
+                tampilkanEditKehadiran(currentSantri, currentDate);
+
             } catch (error) {
                 console.error('Error saat menyimpan absensi:', error);
                 showCenterAlert('Terjadi kesalahan saat menyimpan data absensi.', 5000);
@@ -1099,28 +1110,30 @@
             showLoading(true);
 
             try {
-                const { data: existingData, error: fetchError } = await supabaseClient
-                    .from('absensi')
-                    .select('*')
-                    .eq('tanggal', dateString)
-                    .eq('guru', guru)
-                    .eq('kelas', kelas);
-
-                if (fetchError) throw fetchError;
-
                 const editList = document.getElementById('editList');
                 const rows = editList.getElementsByTagName('tr');
-                const attendanceData = Array.from(rows).map(row => {
-                    const nama = row.cells[1].textContent;
-                    const status = row.cells[2].querySelector('select').value;
-                    return {
-                        tanggal: dateString,
-                        nama: nama,
-                        status: status,
-                        guru: guru,
-                        kelas: kelas
-                    };
-                });
+                const attendanceData = Array.from(rows)
+                    .map(row => {
+                        const nama = row.cells[1].textContent;
+                        const status = row.cells[2].querySelector('select').value;
+                        if (status !== '') {
+                            return {
+                                tanggal: dateString,
+                                nama: nama,
+                                status: status,
+                                guru: guru,
+                                kelas: kelas
+                            };
+                        }
+                        return null;
+                    })
+                    .filter(item => item !== null);
+
+                if (attendanceData.length === 0) {
+                    showCenterAlert('Tidak ada data absensi yang dipilih untuk disimpan.', 3000);
+                    showLoading(false);
+                    return;
+                }
 
                 const { data, error } = await supabaseClient
                     .from('absensi')
@@ -1134,7 +1147,7 @@
                 showCenterAlert('Data absensi berhasil disimpan!', 3000);
                 console.log('Data absensi tersimpan:', data);
 
-                // Perbarui absensiData lokal
+                // Update local absensiData
                 if (!absensiData[dateString]) {
                     absensiData[dateString] = {};
                 }
@@ -1142,8 +1155,13 @@
                     absensiData[dateString][item.nama] = item.status;
                 });
 
-                // Perbarui rekap absen
+                // Update rekap absen and input absen (if editing today's data)
                 updateRekapAbsen();
+                const today = formatDate(new Date());
+                if (dateString === today) {
+                    updateInputAbsen();
+                }
+
             } catch (error) {
                 console.error('Error saving attendance:', error);
                 showCenterAlert('Terjadi kesalahan saat menyimpan data absensi.', 5000);
